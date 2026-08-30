@@ -63,24 +63,43 @@ def advice_text(pct: float | None) -> tuple[str, str]:
     )
 
 
+# 新增 chart_type 參數，預設為 "折線圖"
 def build_price_chart(
     history: pd.DataFrame,
     ticker: str,
     year_low: float,
     year_high: float,
     latest: float,
+    chart_type: str = "折線圖",
 ) -> go.Figure:
     fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=history.index,
-            y=history["Close"],
-            mode="lines",
-            name="收盤價",
-            line=dict(color="#2563eb", width=2),
-            hovertemplate="%{x|%Y-%m-%d}<br>收盤：%{y:.2f}<extra></extra>",
+
+    # 根據選取的圖表類型選擇對應的 Plotly Trace
+    if chart_type == "K線圖" and {"Open", "High", "Low", "Close"}.issubset(history.columns):
+        fig.add_trace(
+            go.Candlestick(
+                x=history.index,
+                open=history["Open"],
+                high=history["High"],
+                low=history["Low"],
+                close=history["Close"],
+                name="K線",
+                increasing_line_color="#ef4444",  # 紅漲
+                decreasing_line_color="#22c55e",  # 綠跌
+            )
         )
-    )
+    else:
+        fig.add_trace(
+            go.Scatter(
+                x=history.index,
+                y=history["Close"],
+                mode="lines",
+                name="收盤價",
+                line=dict(color="#2563eb", width=2),
+                hovertemplate="%{x|%Y-%m-%d}<br>收盤：%{y:.2f}<extra></extra>",
+            )
+        )
+
     fig.add_hline(
         y=year_high,
         line_dash="dash",
@@ -103,7 +122,7 @@ def build_price_chart(
         annotation_position="top right",
     )
     fig.update_layout(
-        title=f"{ticker} 近一年股價走勢",
+        title=f"{ticker} 近一年股價走勢 ({chart_type})",
         xaxis_title="日期",
         yaxis_title="價格",
         template="plotly_white",
@@ -111,6 +130,8 @@ def build_price_chart(
         margin=dict(l=20, r=20, t=60, b=20),
         height=480,
         showlegend=False,
+        # K線圖預設會自帶下方縮放滑桿 (rangeslider)，關閉它讓畫面更乾淨
+        xaxis_rangeslider_visible=False,
     )
     return fig
 
@@ -125,6 +146,14 @@ with st.sidebar:
         value="2330.TW",
         help="台股可用 2330 或 2330.TW；美股如 AAPL、MSFT。",
     )
+    
+    # 新增圖表類型選擇器
+    chart_type = st.radio(
+        "圖表顯示模式",
+        options=["折線圖", "K線圖"],
+        horizontal=True,
+    )
+    
     lookup = st.button("開始診斷", type="primary", use_container_width=True)
     st.markdown(
         """
@@ -145,7 +174,7 @@ if lookup or raw_ticker:
     try:
         with st.spinner(f"正在抓取 {ticker} 近一年資料…"):
             history = load_one_year_history(ticker)
-    except Exception as exc:  # yfinance 錯誤類型較雜，統一顯示給使用者
+    except Exception as exc:
         st.error(str(exc) if str(exc) else f"無法取得 {ticker} 的資料，請確認代號後再試。")
         st.stop()
 
@@ -167,8 +196,9 @@ if lookup or raw_ticker:
     level, message = advice_text(pct)
     getattr(st, level)(message)
 
+    # 傳入選取的 chart_type
     st.plotly_chart(
-        build_price_chart(history, ticker, year_low, year_high, latest),
+        build_price_chart(history, ticker, year_low, year_high, latest, chart_type),
         use_container_width=True,
     )
 
